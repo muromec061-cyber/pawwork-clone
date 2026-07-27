@@ -16,9 +16,12 @@ on:
 jobs:
   poll:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
     # GitHub Actions free tier: 2000 мин/мес Linux
     # ~288 запусков/день × ~2 мин = ~576 мин → 8640 сообщений/мес
-    timeout-minutes: 5
+    timeout-minutes: 10
     
     steps:
       - name: 📥 Checkout repo
@@ -42,9 +45,11 @@ jobs:
         run: python src/agent.py
 
       - name: 💾 Commit state changes
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
           git config --global user.name "PawWork Clone Bot"
           git config --global user.email "bot@pawwork.ai"
           git add -A
-          git diff --cached --quiet || git commit -m "🔄 Auto-update agent state [$(date -u +'%Y-%m-%d %H:%M UTC')]"
-          git push
+          git diff --cached --quiet || (git commit -m "🔄 Auto-update agent state [$(date -u +'%Y-%m-%d %H:%M UTC')]" && git push)
