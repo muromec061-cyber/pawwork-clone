@@ -18,6 +18,7 @@ PawWork Clone v4.0  —  GitHub Actions Agent с многолетним диза
 
 import os, sys, json, time, re, urllib.request, urllib.parse, urllib.error, base64
 from datetime import datetime
+import html as html_mod  # для экранирования HTML в AI-ответах
 
 # ── КОНФИГУРАЦИЯ ───────────────────────────────────────────────
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -82,16 +83,32 @@ def tg_api(method, payload):
         log(f"tg_api error: {e}")
         return {"ok": False}
 
+def html_escape(text):
+    """Экранировать HTML-символы для безопасной отправки в Telegram parse_mode=HTML."""
+    return html_mod.escape(text, quote=False)
+
 def send_message(chat_id, text, parse_mode="HTML", reply_markup=None):
     """Отправить сообщение в Telegram с опциональными кнопками."""
     payload = {
         "chat_id": chat_id,
         "text": text[:4000],
-        "parse_mode": parse_mode,
     }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    return tg_api("sendMessage", payload)
+    result = tg_api("sendMessage", payload)
+    if not result.get("ok"):
+        # Если HTML не прошёл, пробуем без разметки
+        if parse_mode == "HTML":
+            payload["text"] = html_escape(text[:4000])
+            payload["parse_mode"] = "HTML"
+            result = tg_api("sendMessage", payload)
+            if not result.get("ok"):
+                # Если всё ещё не работает — plain text
+                payload.pop("parse_mode", None)
+                result = tg_api("sendMessage", payload)
+    return result
 
 def edit_message(chat_id, msg_id, text, parse_mode="HTML", reply_markup=None):
     """Редактировать сообщение."""
