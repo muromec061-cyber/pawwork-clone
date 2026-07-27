@@ -1,0 +1,13 @@
+{
+  "name": "pawwork-clone",
+  "version": "3.0.0",
+  "description": "🐾 PawWork Clone — твой личный AI агент 24/7. Бесплатные сервера, твои модели.",
+  "main": "src/worker.js",
+  "scripts": {
+    "deploy": "node deploy/deploy.js",
+    "test": "node deploy/test-api.js",
+    "colab": "echo 'Открой colab/ollama-server.ipynb в Google Colab'"
+  },
+  "keywords": ["ai", "agent", "telegram", "rag", "cloudflare", "workers"],
+  "license": "MIT"
+}
