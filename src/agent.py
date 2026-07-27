@@ -690,7 +690,9 @@ def poll_telegram():
         chat_id = msg.get("chat", {}).get("id")
         text = msg.get("text", "").strip()
         
+        # Отладка: логируем структуру если что-то не так
         if not chat_id or not text:
+            log(f"⚠️ DEBUG: update keys={list(update.keys())} msg_keys={list(msg.keys())} chat_id={chat_id} text='{text}'")
             continue
         
         # Обработка команд
