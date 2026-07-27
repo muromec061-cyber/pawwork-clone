@@ -698,50 +698,62 @@ def poll_telegram():
         # Обработка команд
         if text.startswith("/"):
             cmd = text.split()[0].lower()
+            log(f"📋 Команда: {cmd} от {chat_id}")
+            sent = False
             if cmd == "/start":
-                send_message(chat_id, get_welcome_message(), reply_markup=main_menu())
+                result = send_message(chat_id, get_welcome_message(), reply_markup=main_menu())
+                sent = result.get("ok", False)
             elif cmd == "/help":
-                send_message(chat_id, get_help_text(), reply_markup=mode_menu("help", STYLES["help"]))
+                result = send_message(chat_id, get_help_text(), reply_markup=mode_menu("help", STYLES["help"]))
+                sent = result.get("ok", False)
             elif cmd == "/chat":
                 if str(chat_id) not in settings_store:
                     settings_store[str(chat_id)] = {}
                 settings_store[str(chat_id)]["mode"] = "chat"
-                send_message(chat_id,
+                result = send_message(chat_id,
                     f"{STYLES['brain']} <b>Режим: Чат</b>\nНапиши что-нибудь!",
                     reply_markup=mode_menu("chat", STYLES["brain"]))
+                sent = result.get("ok", False)
             elif cmd == "/code":
                 if str(chat_id) not in settings_store:
                     settings_store[str(chat_id)] = {}
                 settings_store[str(chat_id)]["mode"] = "code"
-                send_message(chat_id,
+                result = send_message(chat_id,
                     f"{STYLES['code']} <b>Режим: Код</b>\nОпиши, что нужно создать.",
                     reply_markup=mode_menu("code", STYLES["code"]))
+                sent = result.get("ok", False)
             elif cmd == "/search":
                 if str(chat_id) not in settings_store:
                     settings_store[str(chat_id)] = {}
                 settings_store[str(chat_id)]["mode"] = "search"
-                send_message(chat_id,
+                result = send_message(chat_id,
                     f"{STYLES['search']} <b>Режим: Поиск</b>\nНапиши запрос.",
                     reply_markup=mode_menu("search", STYLES["search"]))
+                sent = result.get("ok", False)
             elif cmd == "/agents":
-                send_message(chat_id, get_agents_text(), reply_markup=agents_menu())
+                result = send_message(chat_id, get_agents_text(), reply_markup=agents_menu())
+                sent = result.get("ok", False)
             elif cmd == "/clear":
                 if str(chat_id) in chat_history:
                     chat_history[str(chat_id)] = []
-                send_message(chat_id,
+                result = send_message(chat_id,
                     f"{STYLES['done']} История очищена!",
                     reply_markup=mode_menu("chat", STYLES["brain"]))
+                sent = result.get("ok", False)
             elif cmd == "/settings":
-                send_message(chat_id, get_settings_text(chat_id), reply_markup={
+                result = send_message(chat_id, get_settings_text(chat_id), reply_markup={
                     "inline_keyboard": [
                         [{"text": "🔄 Сбросить режим", "callback_data": "action_reset_mode"}],
                         [{"text": "🏠 Главное меню", "callback_data": "menu_main"}],
                     ]
                 })
+                sent = result.get("ok", False)
             else:
-                send_message(chat_id,
+                result = send_message(chat_id,
                     f"{STYLES['warning']} Неизвестная команда. Используй /help",
                     reply_markup=main_menu())
+                sent = result.get("ok", False)
+            log(f"📨 Ответ на {cmd}: {'✅' if sent else '❌'}")
             continue
         
         # Определяем режим
