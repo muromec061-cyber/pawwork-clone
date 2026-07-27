@@ -2,8 +2,9 @@ name: 🐾 PawWork Agent Poll
 
 on:
   schedule:
-    # Каждую минуту — быстрый ответ, репозиторий публичный (бесплатно)
-    - cron: '* * * * *'
+    # Каждые 5 минут запускаем новый long-polling сеанс
+    # Внутри скрипт висит ~4.5 мин с Telegram long polling — ответы МГНОВЕННЫЕ
+    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       chat_id:
@@ -21,7 +22,7 @@ jobs:
       actions: read
     # GitHub Actions free tier: 2000 мин/мес Linux
     # ~288 запусков/день × ~2 мин = ~576 мин → 8640 сообщений/мес
-    timeout-minutes: 10
+    timeout-minutes: 8
     
     steps:
       - name: 📥 Checkout repo

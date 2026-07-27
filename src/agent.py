@@ -637,167 +637,152 @@ def handle_callback(callback):
             f"<i>Напиши задачу — и агенты приступят к работе.</i>",
             reply_markup=agents_menu())
 
-# ── POLLING LOOP ──────────────────────────────────────────────
+# ── POLLING LOOP (мгновенные ответы) ─────────────────────────
+
+POLL_DURATION = 280  # секунд активного long polling (5 мин - запас на коммит)
 
 def poll_telegram():
-    """Проверить новые сообщения и callback'и в Telegram."""
-    log("🔍 Polling Telegram...")
+    """
+    Long-polling цикл с мгновенными ответами.
+    Вместо одного быстрого опроса — висит ~5 минут с Telegram long polling (timeout=30).
+    Когда приходит сообщение — отвечает МГНОВЕННО (Telegram присылает его сразу).
+    """
+    log("🔍 Запуск long-polling на 5 минут...")
     
-    # Загружаем состояние
+    # Загружаем начальное состояние
     state, state_sha = load_json("agent_state.json")
-    last_update_id = state.get("last_update_id", 0)
+    offset = state.get("last_update_id", 0) + 1
     
-    # Получаем обновления (сообщения + callback'и)
-    result = tg_api("getUpdates", {
-        "offset": last_update_id + 1,
-        "timeout": 10,
-        "allowed_updates": ["message", "callback_query"],
-    })
-    
-    if not result.get("ok"):
-        log(f"❌ Telegram API error: {result}")
-        return
-    
-    updates = result.get("result", [])
-    if not updates:
-        log("⏳ Нет новых обновлений")
-        return
-    
-    log(f"📨 Получено {len(updates)} обновлений")
-    
-    # Загружаем данные
     global chat_history, settings_store, history_store
     chat_history, _ = load_json("chat_history.json")
-    if not chat_history:
-        chat_history = {}
     settings_store, _ = load_json("settings.json")
-    if not settings_store:
-        settings_store = {}
     history_store = {}
     
-    for update in updates:
-        update_id = update["update_id"]
-        state["last_update_id"] = update_id
-        
-        # Обработка callback'ов (нажатие кнопок)
-        if "callback_query" in update:
-            callback = update["callback_query"]
-            handle_callback(callback)
-            continue
-        
-        # Обработка сообщений
-        msg = update.get("message", {})
-        chat_id = msg.get("chat", {}).get("id")
-        text = msg.get("text", "").strip()
-        
-        # Отладка: логируем структуру если что-то не так
-        if not chat_id or not text:
-            log(f"⚠️ DEBUG: update keys={list(update.keys())} msg_keys={list(msg.keys())} chat_id={chat_id} text='{text}'")
-            continue
-        
-        # Обработка команд
-        if text.startswith("/"):
-            cmd = text.split()[0].lower()
-            log(f"📋 Команда: {cmd} от {chat_id}")
-            sent = False
-            if cmd == "/start":
-                result = send_message(chat_id, get_welcome_message(), reply_markup=main_menu())
-                sent = result.get("ok", False)
-            elif cmd == "/help":
-                result = send_message(chat_id, get_help_text(), reply_markup=mode_menu("help", STYLES["help"]))
-                sent = result.get("ok", False)
-            elif cmd == "/chat":
-                if str(chat_id) not in settings_store:
-                    settings_store[str(chat_id)] = {}
-                settings_store[str(chat_id)]["mode"] = "chat"
-                result = send_message(chat_id,
-                    f"{STYLES['brain']} <b>Режим: Чат</b>\nНапиши что-нибудь!",
-                    reply_markup=mode_menu("chat", STYLES["brain"]))
-                sent = result.get("ok", False)
-            elif cmd == "/code":
-                if str(chat_id) not in settings_store:
-                    settings_store[str(chat_id)] = {}
-                settings_store[str(chat_id)]["mode"] = "code"
-                result = send_message(chat_id,
-                    f"{STYLES['code']} <b>Режим: Код</b>\nОпиши, что нужно создать.",
-                    reply_markup=mode_menu("code", STYLES["code"]))
-                sent = result.get("ok", False)
-            elif cmd == "/search":
-                if str(chat_id) not in settings_store:
-                    settings_store[str(chat_id)] = {}
-                settings_store[str(chat_id)]["mode"] = "search"
-                result = send_message(chat_id,
-                    f"{STYLES['search']} <b>Режим: Поиск</b>\nНапиши запрос.",
-                    reply_markup=mode_menu("search", STYLES["search"]))
-                sent = result.get("ok", False)
-            elif cmd == "/agents":
-                result = send_message(chat_id, get_agents_text(), reply_markup=agents_menu())
-                sent = result.get("ok", False)
-            elif cmd == "/clear":
-                if str(chat_id) in chat_history:
-                    chat_history[str(chat_id)] = []
-                result = send_message(chat_id,
-                    f"{STYLES['done']} История очищена!",
-                    reply_markup=mode_menu("chat", STYLES["brain"]))
-                sent = result.get("ok", False)
-            elif cmd == "/settings":
-                result = send_message(chat_id, get_settings_text(chat_id), reply_markup={
-                    "inline_keyboard": [
-                        [{"text": "🔄 Сбросить режим", "callback_data": "action_reset_mode"}],
-                        [{"text": "🏠 Главное меню", "callback_data": "menu_main"}],
-                    ]
-                })
-                sent = result.get("ok", False)
-            else:
-                result = send_message(chat_id,
-                    f"{STYLES['warning']} Неизвестная команда. Используй /help",
-                    reply_markup=main_menu())
-                sent = result.get("ok", False)
-            log(f"📨 Ответ на {cmd}: {'✅' if sent else '❌'}")
-            continue
-        
-        # Определяем режим
-        mode = settings_store.get(str(chat_id), {}).get("mode", "auto")
-        
-        # Инициализируем историю
-        if str(chat_id) not in chat_history:
-            chat_history[str(chat_id)] = []
-        
-        # Если режим auto, определяем по тексту
-        if mode == "auto":
-            if any(kw in text.lower() for kw in ["напиши код", "создай", "напиши программу",
-                                                    "сделай сайт", "напиши бота", "напиши скрипт",
-                                                    "создай файл", "напиши функцию"]):
-                mode = "code"
-            elif any(kw in text.lower() for kw in ["найди", "поищи", "поиск", "найти",
-                                                     "сколько", "кто такой", "что такое"]):
-                mode = "search"
-            elif any(kw in text.lower() for kw in ["агент", "многоагент", "三省六部", "edict"]):
-                mode = "agent"
-        
-        # Обрабатываем
-        response = process_message(chat_id, text, chat_history[str(chat_id)], mode)
-        
-        # Сохраняем историю
-        chat_history[str(chat_id)].append({"role": "user", "content": text})
-        chat_history[str(chat_id)].append({"role": "assistant", "content": response[:500]})
-        
-        if len(chat_history[str(chat_id)]) > 20:
-            chat_history[str(chat_id)] = chat_history[str(chat_id)][-20:]
-        
-        # Отправляем с кнопкой главного меню
-        send_message(chat_id, response, reply_markup={
-            "inline_keyboard": [
-                [{"text": "🏠 Главное меню", "callback_data": "menu_main"}],
-            ]
-        })
-        log(f"✅ Ответ отправлен в чат {chat_id}")
+    if not chat_history:
+        chat_history = {}
+    if not settings_store:
+        settings_store = {}
     
-    # Сохраняем состояние
+    deadline = time.time() + POLL_DURATION
+    poll_count = 0
+    
+    while time.time() < deadline:
+        remaining = int(deadline - time.time())
+        poll_timeout = min(45, max(10, remaining))
+        poll_count += 1
+        
+        # Long polling: запрос висит до 45 секунд, ждёт сообщение
+        result = tg_api("getUpdates", {
+            "offset": offset,
+            "timeout": poll_timeout,
+            "allowed_updates": ["message", "callback_query"],
+        })
+        
+        if not result.get("ok"):
+            log(f"❌ Telegram API error: {result}")
+            time.sleep(5)
+            continue
+        
+        updates = result.get("result", [])
+        
+        if not updates:
+            continue  # просто таймаут, идём дальше
+        
+        # Сообщения пришли — обрабатываем мгновенно
+        for update in updates:
+            update_id = update["update_id"]
+            offset = update_id + 1
+            state["last_update_id"] = update_id
+            
+            # Callback (нажатие кнопки)
+            if "callback_query" in update:
+                handle_callback(update["callback_query"])
+                continue
+            
+            # Текстовое сообщение
+            msg = update.get("message", {})
+            chat_id = msg.get("chat", {}).get("id")
+            text = msg.get("text", "").strip()
+            
+            if not chat_id or not text:
+                continue
+            
+            log(f"📨 Сообщение от {chat_id}: {text[:50]}...")
+            
+            # Команды
+            if text.startswith("/"):
+                cmd = text.split()[0].lower()
+                log(f"📋 Команда: {cmd}")
+                sent = False
+                
+                if cmd == "/start":
+                    sent = send_message(chat_id, get_welcome_message(), reply_markup=main_menu()).get("ok", False)
+                elif cmd == "/help":
+                    sent = send_message(chat_id, get_help_text(), reply_markup=mode_menu("help", STYLES["help"])).get("ok", False)
+                elif cmd == "/chat":
+                    settings_store.setdefault(str(chat_id), {})["mode"] = "chat"
+                    sent = send_message(chat_id, f"{STYLES['brain']} <b>Режим: Чат</b>\nНапиши что-нибудь!", reply_markup=mode_menu("chat", STYLES["brain"])).get("ok", False)
+                elif cmd == "/code":
+                    settings_store.setdefault(str(chat_id), {})["mode"] = "code"
+                    sent = send_message(chat_id, f"{STYLES['code']} <b>Режим: Код</b>\nОпиши, что нужно создать.", reply_markup=mode_menu("code", STYLES["code"])).get("ok", False)
+                elif cmd == "/search":
+                    settings_store.setdefault(str(chat_id), {})["mode"] = "search"
+                    sent = send_message(chat_id, f"{STYLES['search']} <b>Режим: Поиск</b>\nНапиши запрос.", reply_markup=mode_menu("search", STYLES["search"])).get("ok", False)
+                elif cmd == "/agents":
+                    sent = send_message(chat_id, get_agents_text(), reply_markup=agents_menu()).get("ok", False)
+                elif cmd == "/clear":
+                    chat_history[str(chat_id)] = []
+                    sent = send_message(chat_id, f"{STYLES['done']} История очищена!", reply_markup=mode_menu("chat", STYLES["brain"])).get("ok", False)
+                elif cmd == "/settings":
+                    sent = send_message(chat_id, get_settings_text(chat_id), reply_markup={"inline_keyboard": [[{"text": "🔄 Сбросить режим", "callback_data": "action_reset_mode"}], [{"text": "🏠 Главное меню", "callback_data": "menu_main"}]]}).get("ok", False)
+                else:
+                    sent = send_message(chat_id, f"{STYLES['warning']} Неизвестная команда. Используй /help", reply_markup=main_menu()).get("ok", False)
+                
+                log(f"📨 Ответ: {'✅' if sent else '❌'}")
+                continue
+            
+            # Обычное сообщение — через AI
+            mode = settings_store.get(str(chat_id), {}).get("mode", "auto")
+            
+            if str(chat_id) not in chat_history:
+                chat_history[str(chat_id)] = []
+            
+            # Авто-определение режима
+            if mode == "auto":
+                if any(kw in text.lower() for kw in ["напиши код", "создай", "напиши программу", "сделай сайт", "напиши бота", "напиши скрипт", "создай файл", "напиши функцию"]):
+                    mode = "code"
+                elif any(kw in text.lower() for kw in ["найди", "поищи", "поиск", "найти", "сколько", "кто такой", "что такое"]):
+                    mode = "search"
+                elif any(kw in text.lower() for kw in ["агент", "многоагент", "三省六部", "edict"]):
+                    mode = "agent"
+            
+            response = process_message(chat_id, text, chat_history[str(chat_id)], mode)
+            
+            chat_history[str(chat_id)].append({"role": "user", "content": text})
+            chat_history[str(chat_id)].append({"role": "assistant", "content": response[:500]})
+            
+            if len(chat_history[str(chat_id)]) > 20:
+                chat_history[str(chat_id)] = chat_history[str(chat_id)][-20:]
+            
+            send_message(chat_id, response, reply_markup={
+                "inline_keyboard": [[{"text": "🏠 Главное меню", "callback_data": "menu_main"}]]
+            })
+            log(f"✅ Ответ отправлен")
+        
+        # Сохраняем состояние после каждой пачки обновлений
+        save_json("agent_state.json", state, state_sha)
+        save_json("chat_history.json", chat_history)
+        save_json("settings.json", settings_store)
+        # Обновляем sha после записи
+        state, state_sha = load_json("agent_state.json")
+        
+        log(f"💾 Состояние сохранено (итерация {poll_count})")
+    
+    # Финальное сохранение
     save_json("agent_state.json", state, state_sha)
     save_json("chat_history.json", chat_history)
     save_json("settings.json", settings_store)
-    log("💾 Состояние сохранено")
+    log(f"🏁 Long-polling завершён ({poll_count} итераций)")
 
 # ── MAIN ──────────────────────────────────────────────────────
 
