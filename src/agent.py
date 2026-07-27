@@ -333,6 +333,9 @@ def poll_telegram():
         chat_id = msg.get("chat", {}).get("id")
         text = msg.get("text", "").strip()
         
+        # Всегда обновляем last_update_id (даже для команд)
+        state["last_update_id"] = update_id
+        
         if not chat_id or not text:
             continue
         
@@ -363,9 +366,6 @@ def poll_telegram():
         # Отправляем ответ
         send_message(chat_id, response)
         log(f"✅ Ответ отправлен в чат {chat_id}")
-        
-        # Обновляем last_update_id
-        state["last_update_id"] = update_id
     
     # Сохраняем состояние и историю
     save_json("agent_state.json", state, state_sha)
