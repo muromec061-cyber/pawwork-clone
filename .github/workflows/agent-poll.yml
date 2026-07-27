@@ -2,8 +2,8 @@ name: 🐾 PawWork Agent Poll
 
 on:
   schedule:
-    # Каждые 5 минут — 24/7, бесплатно
-    - cron: '*/5 * * * *'
+    # Каждую минуту — быстрый ответ, репозиторий публичный (бесплатно)
+    - cron: '* * * * *'
   workflow_dispatch:
     inputs:
       chat_id:
