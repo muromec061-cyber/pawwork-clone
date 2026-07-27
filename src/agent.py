@@ -25,7 +25,7 @@ GITHUB_TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
 API_KEY = os.environ.get("PAWWORK_API_KEY", "sk-pawwork-demo")
 STORAGE_REPO = os.environ.get("STORAGE_REPO", "muromec061-cyber/pawwork-clone")
 OWNER, REPO = STORAGE_REPO.split("/") if "/" in STORAGE_REPO else ("muromec061-cyber", "pawwork-clone")
-BOT_USERNAME = "@Gptzloy_bot"
+BOT_USERNAME = "@Gptzloy_bot"  # Токен: 8961572816:AAHYo4_gGmBHbrUiFokHl7UJJzGifh61_aU
 
 # ── СТИЛИ ──────────────────────────────────────────────────────
 STYLES = {
