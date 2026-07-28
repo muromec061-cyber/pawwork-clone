@@ -1,9 +1,12 @@
 {
-  "name": "PawWork Ollama Dev Container",
+  "name": "PawWork Ultimate",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/node:1": {}
+    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
   },
   "customizations": {
     "vscode": {
@@ -13,13 +16,19 @@
       ]
     }
   },
-  "postCreateCommand": "bash .devcontainer/setup-ollama.sh",
-  "forwardPorts": [11434],
+  "postCreateCommand": "bash .devcontainer/setup-ollama.sh && bash .devcontainer/setup-ultimate.sh",
+  "forwardPorts": [11434, 8080, 9000, 3001, 81, 3737],
   "portsAttributes": {
-    "11434": {
-      "label": "Ollama API",
-      "onAutoForward": "notify"
-    }
+    "11434": { "label": "Ollama API" },
+    "8080":  { "label": "Telegram Bot" },
+    "9000":  { "label": "Portainer" },
+    "3001":  { "label": "Uptime Kuma" },
+    "81":    { "label": "NPM" },
+    "3737":  { "label": "OpenClaw" }
   },
-  "remoteUser": "vscode"
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "TELEGRAM_TOKEN": "8961572816:AAHYo4_gGmBHbrUiFokHl7UJJzGifh61_aU",
+    "GITHUB_TOKEN": "ghp_Lx7AjHH4ZqMYLa3WUE7N78KOGgnF2q3OFAJo"
+  }
 }
