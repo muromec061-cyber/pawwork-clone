@@ -503,9 +503,26 @@ async function tool_calculate(expr, env) {
   try { return String(Function('"use strict"; return (' + expr + ')')()); } catch { return 'Ошибка вычисления'; }
 }
 
-// Image Generation Tool
-async function tool_generate_image(prompt, opts = {}, env) {
+// Image Generation Tool — реальная генерация + отправка в Telegram
+async function tool_generate_image(prompt, opts = {}, env, chatId = null) {
   const result = await generateImage(prompt, opts, env);
+  if (result.url && chatId && env.TELEGRAM_TOKEN) {
+    // Скачиваем и отправляем картинку прямо в чат
+    try {
+      const imgRes = await fetch(result.url);
+      if (imgRes.ok) {
+        const blob = await imgRes.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(blob)));
+        // Отправляем через sendPhoto (multipart/form-data не работает просто так в Workers)
+        // Используем URL — Telegram сам скачает
+        await sendPhoto(env.TELEGRAM_TOKEN, chatId, result.url, 
+          `🎨 ${prompt}\n<small>⚡ ${result.provider}</small>`);
+        return `✅ Картинка отправлена в чат!`;
+      }
+    } catch (e) {
+      console.error('Image send error:', e);
+    }
+  }
   if (result.url) {
     return `🎨 <a href="${result.url}">Сгенерировано</a> (${result.provider}): ${prompt}`;
   }
@@ -561,7 +578,7 @@ async function tool_summarize(text, maxLen = 500, env) {
 }
 
 // ======================== TOOL ROUTER ========================
-async function executeTool(name, args, env) {
+async function executeTool(name, args, env, chatId = null) {
   try {
     switch (name) {
       case 'web_search': return await tool_web_search(args.query, env);
@@ -575,7 +592,7 @@ async function executeTool(name, args, env) {
       case 'run_python': return await tool_run_python(args.code, env);
       case 'run_js': return await tool_run_js(args.code, env);
       case 'calculate': return await tool_calculate(args.expr, env);
-      case 'generate_image': return await tool_generate_image(args.prompt, args, env);
+      case 'generate_image': return await tool_generate_image(args.prompt, args, env, chatId);
       case 'obsidian_sync': return await tool_obsidian_sync(args.action, args.vault, args.path, args.content, env);
       case 'web_fetch': return await tool_web_fetch(args.url, env);
       case 'extract_links': return await tool_extract_links(args.text, env);
@@ -764,7 +781,7 @@ async function handleMessage(msg, env, ctx) {
     messages.push({ role: 'assistant', content: aiText });
     
     // Execute tool
-    const observation = await executeTool(action, actionInput, env);
+    const observation = await executeTool(action, actionInput, env, chatId);
     messages.push({ role: 'user', content: `OBSERVATION: ${observation}` });
     
     // If tool is finish, extract answer
