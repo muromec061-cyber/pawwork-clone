@@ -356,6 +356,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 m = data['message']
                 chat_id = m.get('chat', {}).get('id')
                 text = (m.get('text') or '').strip()
+                log.info(f'📩 msg from {chat_id}: {text[:60]}')
                 if chat_id and text:
                     # Async handling so webhook responds fast
                     threading.Thread(target=handle, args=(chat_id, text), daemon=True).start()
@@ -364,6 +365,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 chat_id = cb.get('message', {}).get('chat', {}).get('id')
                 data_str = cb.get('data', '')
                 cb_id = cb.get('id', '')
+                log.info(f'🔘 callback from {chat_id}: {data_str}')
                 if chat_id:
                     threading.Thread(target=handle_callback, args=(chat_id, data_str, cb_id), daemon=True).start()
         except Exception as e:
