@@ -1,0 +1,3 @@
+# PawWork Replit Bot
+# No external dependencies needed - using standard library
+# urllib, http.server, json, io, os, logging

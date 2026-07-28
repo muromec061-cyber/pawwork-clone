@@ -64,9 +64,9 @@ const IMAGE_PROVIDERS = [
         model: opts.model || 'flux',
         seed: String(opts.seed || ''),
         nologo: 'true',
-        private: 'true',
       });
-      return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params}`;
+      // Pollinations URL — Telegram сам скачает картинку
+      return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${opts.width || 1024}&height=${opts.height || 1024}&model=${opts.model || 'flux'}&nologo=true`;
     },
   },
   {
@@ -277,10 +277,11 @@ function clearMemory() {
 // ======================== TELEGRAM API ========================
 async function tgApi(token, method, payload) {
   const url = `https://api.telegram.org/bot${token}/${method}`;
+  const isFormData = payload instanceof FormData;
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    headers: isFormData ? {} : { 'Content-Type': 'application/json' },
+    body: isFormData ? payload : JSON.stringify(payload),
   });
   return res.json();
 }
@@ -316,8 +317,32 @@ async function answerCallback(token, cbId, text) {
   return tgApi(token, 'answerCallbackQuery', { callback_query_id: cbId, text: text || '✓', show_alert: false });
 }
 
-async function sendPhoto(token, chatId, photo, caption = '', extra = {}) {
-  return tgApi(token, 'sendPhoto', { chat_id: chatId, photo, caption: String(caption).slice(0, 1024), parse_mode: 'HTML', ...extra });
+async function sendPhoto(token, chatId, photoUrl, caption = '', extra = {}) {
+  // ШАГ 1: Пробуем как URL — Telegram сам скачает (проще всего)
+  const payload = { chat_id: chatId, photo: photoUrl, caption: String(caption).slice(0, 1024), parse_mode: 'HTML', ...extra };
+  let result = await tgApi(token, 'sendPhoto', payload);
+  if (result.ok) return result;
+  
+  // ШАГ 2: Скачиваем картинку САМИ и отправляем multipart
+  try {
+    const imgRes = await fetch(photoUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!imgRes.ok) throw new Error(`Fetch failed: ${imgRes.status}`);
+    const blob = await imgRes.blob();
+    const formData = new FormData();
+    formData.append('chat_id', String(chatId));
+    formData.append('photo', blob, 'image.png');
+    formData.append('caption', String(caption).slice(0, 1024));
+    formData.append('parse_mode', 'HTML');
+    if (extra.reply_markup) formData.append('reply_markup', JSON.stringify(extra.reply_markup));
+    
+    result = await tgApi(token, 'sendPhoto', formData);
+    if (result.ok) return result;
+  } catch (e) { console.error('sendPhoto multipart error:', e); }
+  
+  // ШАГ 3: Фallback — ссылка текстом
+  return sendMessage(token, chatId, 
+    `🎨 <a href="${photoUrl}">Картинка</a>\n${caption}`, 
+    extra);
 }
 
 // ======================== AI TEXT ========================
@@ -503,25 +528,13 @@ async function tool_calculate(expr, env) {
   try { return String(Function('"use strict"; return (' + expr + ')')()); } catch { return 'Ошибка вычисления'; }
 }
 
-// Image Generation Tool — реальная генерация + отправка в Telegram
+// Image Generation Tool — отправка в Telegram
 async function tool_generate_image(prompt, opts = {}, env, chatId = null) {
   const result = await generateImage(prompt, opts, env);
   if (result.url && chatId && env.TELEGRAM_TOKEN) {
-    // Скачиваем и отправляем картинку прямо в чат
-    try {
-      const imgRes = await fetch(result.url);
-      if (imgRes.ok) {
-        const blob = await imgRes.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(blob)));
-        // Отправляем через sendPhoto (multipart/form-data не работает просто так в Workers)
-        // Используем URL — Telegram сам скачает
-        await sendPhoto(env.TELEGRAM_TOKEN, chatId, result.url, 
-          `🎨 ${prompt}\n<small>⚡ ${result.provider}</small>`);
-        return `✅ Картинка отправлена в чат!`;
-      }
-    } catch (e) {
-      console.error('Image send error:', e);
-    }
+    await sendPhoto(env.TELEGRAM_TOKEN, chatId, result.url, 
+      `🎨 ${prompt}\n<small>⚡ ${result.provider}</small>`);
+    return `✅ Картинка отправлена в чат!`;
   }
   if (result.url) {
     return `🎨 <a href="${result.url}">Сгенерировано</a> (${result.provider}): ${prompt}`;
@@ -742,11 +755,37 @@ async function handleMessage(msg, env, ctx) {
     return sendMessage(env.TELEGRAM_TOKEN, chatId, 'Неизвестная команда. /help', { reply_markup: MAIN_MENU });
   }
   
+  const mode = memory[`mode:${chatId}`] || 'auto';
+  
+  // 🎨 ПРЯМАЯ ГЕНЕРАЦИЯ КАРТИНОК (без AI, без agent loop)
+  const imgKeywords = ['картинк', 'изображен', 'нарисуй', 'нарисовать', 'img:', 'image:', 'generate:'];
+  const isImageRequest = imgKeywords.some(kw => text.toLowerCase().includes(kw)) || mode === 'image';
+  if (isImageRequest && mode !== 'chat') {
+    // Извлекаем промпт: после ключевого слова или всё сообщение
+    let imgPrompt = text;
+    for (const kw of imgKeywords) {
+      const idx = text.toLowerCase().indexOf(kw);
+      if (idx >= 0) {
+        imgPrompt = text.slice(idx + kw.length).replace(/^[:\s]+/, '').trim();
+        break;
+      }
+    }
+    if (imgPrompt && imgPrompt.length > 2) {
+      await tgApi(env.TELEGRAM_TOKEN, 'sendChatAction', { chat_id: chatId, action: 'upload_photo' }).catch(() => {});
+      const result = await generateImage(imgPrompt, {}, env);
+      if (result.url) {
+        await sendPhoto(env.TELEGRAM_TOKEN, chatId, result.url, 
+          `🎨 <b>${imgPrompt}</b>\n<small>⚡ ${result.provider} · @Gptzloy_bot</small>`,
+          { reply_markup: MAIN_MENU });
+        return;
+      }
+    }
+  }
+
   // Agentic processing for complex tasks
   const isComplex = text.length > 100 || ['создай', 'напиши', 'построй', 'проанализируй', 'сравни', 'рефактор', 'деплой', 'автоматизируй'].some(w => text.toLowerCase().includes(w));
   const systemPrompt = isComplex ? AGENT_PROMPT : SYSTEM_PROMPT;
   
-  const mode = memory[`mode:${chatId}`] || 'auto';
   const history = memory[`history:${chatId}`] || [];
   
   const messages = [
