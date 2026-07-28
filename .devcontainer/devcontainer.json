@@ -29,6 +29,8 @@
   "remoteUser": "vscode",
   "containerEnv": {
     "TELEGRAM_TOKEN": "8961572816:AAHYo4_gGmBHbrUiFokHl7UJJzGifh61_aU",
-    "GITHUB_TOKEN": "ghp_Lx7AjHH4ZqMYLa3WUE7N78KOGgnF2q3OFAJo"
-  }
+    "GITHUB_TOKEN": "ghp_Lx7AjHH4ZqMYLa3WUE7N78KOGgnF2q3OFAJo",
+    "PUBLIC_URL": ""
+  },
+  "postStartCommand": ".devcontainer/setup-public-url.sh"
 }

@@ -7,9 +7,37 @@ log = logging.getLogger('pawwork')
 
 # ── Config ────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
-HOSTNAME = os.environ.get('CODESPACE_NAME', 'localhost')
 BOT_PORT = int(os.environ.get('BOT_PORT', 8080))
-OWNER_ID = int(os.environ.get('OWNER_ID', 0))  # Telegram user ID босса
+OWNER_ID = int(os.environ.get('OWNER_ID', 5883513384))  # @Dollarkiil
+
+# Определяем публичный URL — пробуем несколько источников
+def detect_url():
+    # 1. Явная PUBLIC_URL
+    u = os.environ.get('PUBLIC_URL', '')
+    if u: return u.rstrip('/')
+    # 2. .env файл
+    env_file = os.path.join(os.path.dirname(__file__) or '.', '.env')
+    if os.path.exists(env_file):
+        for line in open(env_file):
+            if line.startswith('PUBLIC_URL='):
+                val = line.split('=', 1)[1].strip()
+                if val: return val
+    # 3. gh codespace CLI
+    try:
+        import subprocess
+        r = subprocess.run(['gh', 'codespace', 'view', '--json', 'name'],
+                         capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            cs = json.loads(r.stdout).get('name', '')
+            if cs: return f'https://{cs}-{BOT_PORT}.app.github.dev'
+    except:
+        pass
+    return ''
+
+PUBLIC_URL = detect_url()
+HOSTNAME = os.environ.get('CODESPACE_NAME') or os.environ.get('HOSTNAME') or 'localhost'
+
+# ── Telegram API helpers ──────────────────────────────────────────────
 
 # ── Telegram API helpers ──────────────────────────────────────────────
 def tg(method, data, timeout=30):
@@ -257,18 +285,20 @@ def handle(chat_id, text):
         
         return send(chat_id,
             f'🤖 <b>PawWork Ultimate v7</b>\n'
-            f'📍 <code>{HOSTNAME}</code> | Порт {BOT_PORT}\n\n'
+            f'📍 <code>{HOSTNAME}</code> | :{BOT_PORT}\n'
+            f'🔗 <code>{PUBLIC_URL or "не задан"}</code>\n\n'
             f'<b>🧠 Ollama:</b>\n{m_text}\n\n'
             f'<b>🔧 OpenClaude:</b> {oc}\n\n'
             f'<b>⚡ Команды:</b>\n'
-            f'/ask <i>текст</i> — спросить AI\n'
-            f'/image <i>запрос</i> — картинка\n'
-            f'/models — модели Ollama\n'
-            f'/code <i>задача</i> — написать код\n'
+            f'/ask <i>текст</i> — спросить AI (Ollama)\n'
+            f'/image <i>запрос</i> — картинка (AI)\n'
+            f'/code <i>задача</i> — написать код (OpenClaude)\n'
+            f'/models — список моделей Ollama\n'
             f'/help — подробная справка',
             reply_markup=keyboard([
                 [('🎨 Сгенерировать', '/image '), ('🤖 Спросить', '/ask ')],
-                [('📋 Модели', '/models'), ('ℹ️ Статус', '/status')]
+                [('💻 Написать код', '/code '), ('📋 Модели', '/models')],
+                [('ℹ️ Статус', '/status'), ('❓ Помощь', '/help')]
             ]))
 
     # ── Help ──
@@ -396,13 +426,17 @@ if __name__ == '__main__':
         log.warning(f'⚠️ Cannot verify bot identity')
     
     # Set webhook
-    public_url = f'https://{HOSTNAME}-{BOT_PORT}.preview.app.github.dev/webhook'
-    log.info(f'📡 Webhook: {public_url}')
-    wh = tg('setWebhook', {'url': public_url})
-    if wh.get('ok'):
-        log.info(f'✅ Webhook set → {public_url}')
+    wh_url = f'{PUBLIC_URL}webhook' if PUBLIC_URL else ''
+    if wh_url:
+        log.info(f'📡 Webhook URL computed: {wh_url}')
+        wh = tg('setWebhook', {'url': wh_url})
+        if wh.get('ok'):
+            log.info(f'✅ Webhook set → {wh_url}')
+        else:
+            log.warning(f'⚠️ Webhook auto-set failed: {wh.get("error", "?")}')
     else:
-        log.warning(f'⚠️ Webhook failed: {wh.get("error", "?")}')
+        log.warning(f'⚠️ No public URL — webhook must be set manually')
+        log.info(f'➡️  Use: tg setWebhook?url=https://YOUR-URL.app.github.dev/webhook')
     
     # Check Ollama
     try:
