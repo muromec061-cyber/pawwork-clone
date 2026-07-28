@@ -15,13 +15,14 @@ def detect_url():
     # 1. Явная PUBLIC_URL
     u = os.environ.get('PUBLIC_URL', '')
     if u: return u.rstrip('/')
-    # 2. .env файл
-    env_file = os.path.join(os.path.dirname(__file__) or '.', '.env')
-    if os.path.exists(env_file):
-        for line in open(env_file):
-            if line.startswith('PUBLIC_URL='):
-                val = line.split('=', 1)[1].strip()
-                if val: return val
+    # 2. .env файл (проверяем bot/.env и рядом с ботом /.env)
+    for env_path in [os.path.join(os.path.dirname(__file__) or '.', '.env'),
+                     os.path.join(os.path.dirname(os.path.dirname(__file__)) or '.', '.env')]:
+        if os.path.exists(env_path):
+            for line in open(env_path):
+                if line.startswith('PUBLIC_URL='):
+                    val = line.split('=', 1)[1].strip()
+                    if val: return val
     # 3. gh codespace CLI
     try:
         import subprocess
@@ -426,7 +427,7 @@ if __name__ == '__main__':
         log.warning(f'⚠️ Cannot verify bot identity')
     
     # Set webhook
-    wh_url = f'{PUBLIC_URL}webhook' if PUBLIC_URL else ''
+    wh_url = f'{PUBLIC_URL}/webhook' if PUBLIC_URL else ''
     if wh_url:
         log.info(f'📡 Webhook URL computed: {wh_url}')
         wh = tg('setWebhook', {'url': wh_url})
